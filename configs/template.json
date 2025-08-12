@@ -1,0 +1,42 @@
+{
+  "name": "Template Configuration (Unreal Engine)",
+  "version": "1.0",
+  "description": "Template configuration file for frida-uexplorer. Modify patterns and offsets for your specific UE version and target game.",
+  "patterns": {
+    "GObjects": "48 8B 05 ? ? ? ? 48 8B 0C C8",
+    "GNames": "48 8D 0D ? ? ? ? E8 ? ? ? ? 48 8B C8 E8",
+    "GWorld": "48 8B 05 ? ? ? ? 48 85 C0 74 ? 48 8B 48"
+  },
+  "offsets": {
+    "UObject": {
+      "ClassPrivate": 16,
+      "NamePrivate": 24,
+      "OuterPrivate": 32
+    },
+    "UField": {
+      "Next": 40
+    },
+    "UProperty": {
+      "Offset_Internal": 76
+    },
+    "FUObjectArray": {
+      "NumElements": 8,
+      "MaxElements": 12,
+      "Objects": 16
+    },
+    "FNameEntry": {
+      "Index": 0,
+      "String": 8
+    },
+    "UStruct": {
+      "SuperStruct": 64,
+      "Children": 72,
+      "PropertiesSize": 80,
+      "MinAlignment": 84
+    },
+    "UClass": {
+      "CastFlags": 136,
+      "ClassDefaultObject": 144
+    }
+  }
+}
