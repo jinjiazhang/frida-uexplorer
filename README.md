@@ -1,30 +1,33 @@
 # frida-uexplorer
 
-[![Status](https://img.shields.io/badge/status-in_development-yellow.svg)](https://github.com/your-username/frida-uexplorer)
+[![Status](https://img.shields.io/badge/status-in_development-yellow.svg)](https://github.com/jinjiazhang/frida-uexplorer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**frida-uexplorer** 是一个交互式的、实时的Unreal Engine游戏内存勘探工具。它采用客户端-服务器架构，允许用户通过一个友好的命令行界面向注入游戏的Frida `agent` 发送指令，并以结构化的方式查看返回的数据。
+**frida-uexplorer** 是一个交互式的、实时的Unreal Engine游戏内存勘探工具。它采用客户端-服务器架构，并支持可插拔的配置文件，允许用户通过一个友好的命令行界面向注入游戏的Frida `agent` 发送指令，并以结构化的方式查看返回的数据。
 
-这个项目旨在为逆向工程师和游戏安全研究者提供一个强大、灵活的工具，用于深入理解UE游戏的内部工作原理。
+这个项目旨在为逆向工程师和游戏安全研究者提供一个强大、灵活、易于配置的工具，用于深入理解UE游戏的内部工作原理。
 
 ## 🏛️ 架构
 
-本项目由两个核心部分组成：
+本项目由三个核心部分组成：
 
 * **`agent/`**: 一个用JavaScript编写的Frida脚本。它被注入到目标游戏进程中，作为“服务器”运行。它负责所有低级别的内存操作，如扫描、地址解析、对象遍历和属性反射。它通过Frida的RPC（远程过程调用）暴露出一系列API供客户端调用。
 
-* **`explorer/`**: 一个用户侧的客户端（例如用Python或Node.js编写）。它负责提供用户界面（当前为命令行），将用户的指令发送给`agent`，并以可读的格式展示从`agent`返回的复杂数据。
+* **`explorer/`**: 一个用户侧的Python客户端。它负责提供用户界面（当前为命令行），加载配置文件，将用户的指令发送给`agent`，并以可读的格式展示从`agent`返回的复杂数据。
+
+* **`configs/`**: 存放针对不同Unreal Engine版本或特定游戏的配置文件（`.json`格式）。每个文件包含了定位核心结构所需的**特征码 (AOB Patterns)** 和关键的**内存偏移量 (Offsets)**。
 
 ```
-┌────────┐     ┌───────────────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
-│  User  │ <-> │ Explorer (Python/Node.js) │ <───┤      Frida RPC       ├───> │   Agent (JavaScript)  │ <-> │ Target Game Process │
-└────────┘     └───────────────────────────┘     └──────────────────────┘     └─────────────────────┘
-  (Client)                                          (Communication)                (Server)
+┌────────┐     ┌────────────────┐     ┌──────────────────┐     ┌───────────────────┐     ┌─────────────────────┐
+│  User  │ <-> │ Explorer (Py)  │ <── │ Configs (*.json) │ ──> │   Agent (JS)      │ <── │ Target Game Process │
+└────────┘     └────────────────┘     └──────────────────┘     └───────────────────┘     └─────────────────────┘
+  (Client)        (Loads Config)         (Provides Data)         (Receives Config)         (Server-side Logic)
 ```
 
 ## ✨ 功能特性
 
 * **客户端-服务器架构**: 将复杂的内存操作与用户界面分离，易于维护和扩展。
+* **可配置化**: 通过简单的JSON文件支持不同UE版本和游戏，无需修改代码。
 * **交互式命令行**: 通过简单的命令实时查询游戏状态。
 * **动态地址解析**: 使用特征码（AOB）扫描在运行时自动定位UE的核心全局变量 (`GObjects`, `GNames`, `GWorld`)。
 * **深度对象勘探**: 可以从任意内存地址开始，递归地dump `UObject` 的属性、类信息和层级关系。
@@ -47,77 +50,80 @@
 ### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/your-username/frida-uexplorer.git
+git clone https://github.com/jinjiazhang/frida-uexplorer.git
 cd frida-uexplorer
 ```
 
-### 2. ⚠️ 配置 Agent (最重要的一步!)
+### 2. ⚠️ 配置 (最重要的一步!)
 
-由于每个游戏、每个版本的内存布局都不同，你**必须**手动配置 `agent` 以匹配你的目标游戏。
+此工具的强大之处在于其配置系统。你需要为你的目标游戏选择或创建一个配置文件。
 
-打开 `agent/index.js` 文件，找到 `CONFIG` 部分：
+1. **浏览 `configs/` 目录**:
+ 查看是否已有适用于你的UE版本的配置文件（例如 `UE4.27.json`, `UE5.1.json`）。
 
-```javascript
-// agent/index.js
+2. **创建或修改配置文件**:
+ 如果找不到合适的配置，复制一份现有的文件（如 `template.json`）并重命名。然后，使用IDA/Ghidra和ReClass.NET等工具找到正确的**特征码**和**偏移量**，并填充到你的JSON文件中。
 
-// =================== CONFIGURATION ===================
-// 你必须手动填充这些值！
-// 使用IDA/Ghidra寻找特征码，使用ReClass.NET验证偏移量。
-const CONFIG = {
-    Patterns: {
-        GObjects: "48 8B 05 ? ? ? ? 48 8B 0C C8",
-        GNames: "48 8D 0D ? ? ? ? E8 ? ? ? ? 48 8B C8 E8",
-        GWorld: "48 8B 05 ? ? ? ? 48 85 C0 74 ? 48 8B 48",
-    },
-    Offsets: {
-        UObject: {
-            ClassPrivate: 0x10,
-            NamePrivate: 0x18,
-            OuterPrivate: 0x20,
+ 一个配置文件的结构如下 (`configs/MyGame_UE4.25.json`):
+```json
+    {
+      "name": "My Game (Unreal Engine 4.25)",
+      "version": "1.0",
+      "patterns": {
+        "GObjects": "48 8B 05 ? ? ? ? 48 8B 0C C8",
+        "GNames": "48 8D 0D ? ? ? ? E8 ? ? ? ? 48 8B C8 E8",
+        "GWorld": "48 8B 05 ? ? ? ? 48 85 C0 74 ? 48 8B 48"
+      },
+      "offsets": {
+        "UObject": {
+          "ClassPrivate": 16,
+          "NamePrivate": 24,
+          "OuterPrivate": 32
         },
-        UField: {
-            Next: 0x28,
+        "UField": {
+          "Next": 40
         },
-        UProperty: {
-            Offset_Internal: 0x4C,
-        },
-        // ... 其他你需要的偏移量
+        "UProperty": {
+          "Offset_Internal": 76
+        }
+      }
     }
-};
-// =====================================================
-```
-**如何配置**: 请参考[主README](README.md)中关于寻找特征码和偏移量的详细指南。这是成功运行此工具的关键。
+    ```
+    **注意**: JSON中的偏移量应为十进制数字。
 
 ### 3. 安装 Explorer 依赖
 
 ```bash
 cd explorer
-pip install -r requirements.txt  # 假设你有一个requirements.txt文件
+pip install -r requirements.txt # 假设你有一个requirements.txt文件
 ```
 
 ### 4. 运行 frida-uexplorer
 
-`explorer` 脚本负责加载 `agent` 并附加到游戏进程。
+`explorer` 脚本负责加载配置文件、注入 `agent` 并附加到游戏进程。
 
-首先，启动你的目标游戏。然后运行 `explorer`：
+使用 `-c` 或 `--config` 参数指定你要使用的配置文件。
 
 **通过进程名附加:**
 ```bash
-python explorer/main.py -n "YourGame-Win64-Shipping.exe"
+python explorer/main.py -n "YourGame-Win64-Shipping.exe" -c ../configs/MyGame_UE4.25.json
 ```
 
 **通过PID附加:**
 ```bash
-python explorer/main.py -p 12345
+python explorer/main.py -p 12345 --config ../configs/UE5.1.json
 ```
 
 **对于Android游戏 (通过包名):**
 ```bash
-python explorer/main.py -U -f com.epicgames.YourGame
+python explorer/main.py -U -f com.epicgames.YourGame -c ../configs/Android_UE4.27.json
 ```
 
-成功附加后，你将看到一个命令提示符：
+如果成功，你将看到 `explorer` 加载了配置，并进入命令提示符：
 ```
+[+] Config 'My Game (Unreal Engine 4.25)' loaded.
+[+] Attached to process 'YourGame-Win64-Shipping.exe' (PID: 12345).
+[+] Agent initialized successfully.
 frida-uexplorer>
 ```
 
@@ -137,32 +143,6 @@ frida-uexplorer>
 | `help` | - | 显示帮助信息。 |
 | `exit` | - | 分离并退出。 |
 
-**示例:**
-```
-frida-uexplorer> info
-[+] GWorld: 0x7ff6a0b1c2d0
-[+] GObjects: 0x7ff6a0a3f4c0
-[+] GNames: 0x7ff6a0a2b1e0
-[+] Total UObjects: 158234
-
-frida-uexplorer> player
---- Dumping Object: PlayerController_0 ---
-Address: 0x1c8b4a9fec0
-Class: PlayerController
-  [+] PlayerCameraManager (ObjectProperty) @ offset 0x2b8 = PlayerCameraManager_0 (0x1c8b4a9ff80)
-  [+] AcknowledgedPawn (ObjectProperty) @ offset 0x2a0 = ThirdPersonCharacter_0 (0x1c8b4a9fd40)
-  [+] bShowMouseCursor (BoolProperty) @ offset 0x518 = false
-  ...
-
-frida-uexplorer> dump 0x1c8b4a9fd40
---- Dumping Object: ThirdPersonCharacter_0 ---
-Address: 0x1c8b4a9fd40
-Class: ThirdPersonCharacter
-  [+] CapsuleComponent (ObjectProperty) @ offset 0x288 = CapsuleComponent_0 (0x1c8b4aa0040)
-  [+] Mesh (ObjectProperty) @ offset 0x298 = SkeletalMeshComponent_0 (0x1c8b4aa0100)
-  ...
-```
-
 ## 🚨 警告：反作弊与道德使用
 
 * **使用风险自负**。在受反作弊系统（如EAC, BattlEye）保护的游戏上使用此工具，**极有可能导致你的游戏账号被封禁**。
@@ -174,12 +154,12 @@ Class: ThirdPersonCharacter
 * [ ] **Agent**: 完善对 `TArray`, `TMap`, `TSet` 和嵌套 `UStruct` 的解析。
 * [ ] **Explorer**: 开发一个图形用户界面（GUI），例如使用 Dear PyGui, Qt, 或 Electron，以树状视图展示对象。
 * [ ] **Explorer**: 增加数据导出功能（如JSON）。
-* [ ] **Core**: 为不同UE版本提供预设的配置（特征码和偏移量）。
 * [ ] **Core**: 增加调用 `UFunction` 的能力。
+* [ ] **Configs**: 社区驱动，收集并验证更多UE版本和热门游戏的配置文件。
 
 ## 🤝 贡献
 
-欢迎提交 Pull Requests！如果你有任何改进建议或发现了Bug，请随时创建 Issue。
+欢迎提交 Pull Requests！如果你为某个游戏或UE版本创建了一个新的配置文件，请考虑提交它，让更多人受益。如果你有任何改进建议或发现了Bug，请随时创建 Issue。
 
 ## 📄 许可证
 
